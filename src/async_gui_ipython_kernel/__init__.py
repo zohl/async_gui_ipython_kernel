@@ -9,7 +9,10 @@ from ipykernel.kernelapp import IPKernelApp
 from ipykernel import kernelspec
 from ipykernel.kernelspec import (
     InstallIPythonKernelSpecApp,
-    make_ipkernel_cmd, _is_debugpy_available)
+    make_ipkernel_cmd,
+    # _is_debugpy_available
+)
+
 from traitlets import Unicode
 from tornado.queues import Queue
 import asyncio
@@ -171,14 +174,19 @@ class AsyncGUIKernel(IPythonKernel):
 default_display_name = "Async GUI Python %i (asyng_gui_ipython_kernel)" % sys.version_info[0]
 
 
-def custom_get_kernel_dict(extra_arguments=None):
-    return {
-        "argv": make_ipkernel_cmd('async_gui_ipython_kernel', extra_arguments=extra_arguments),
-        "display_name": default_display_name,
-        "language": "python",
-        "metadata": {"debugger": _is_debugpy_available}}
-
 # Monkey patching `get_kernel_dict` to use custom `mod``
+
+_get_kernel_dict = kernelspec.get_kernel_dict
+
+
+def custom_get_kernel_dict(
+        extra_arguments: list[str] | None = None,
+        python_arguments: list[str] | None = None) -> dict[str, Any]:
+
+    return _get_kernel_dict(extra_arguments, python_arguments) | dict(
+        argv = make_ipkernel_cmd('async_gui_ipython_kernel', extra_arguments=extra_arguments))
+
+
 kernelspec.get_kernel_dict = custom_get_kernel_dict
 
 
@@ -204,7 +212,3 @@ class AsyncGUIKernelApp(IPKernelApp):
         "install": (
             "async_gui_ipython_kernel.InstallAsyncGUIKernelSpecApp",
             "Install the IPython kernel")}
-
-
-if __name__ == '__main__':
-    AsyncGUIKernelApp.launch_instance(kernel_class = AsyncGUIKernel)

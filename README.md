@@ -8,18 +8,45 @@ Currently, the IPython kernel will only process one message at a time. Including
 Being able to wait on user input in Jupyter opens up possibilities for building interfaces. For example, in the GIF below, you can `await` on a GUI that takes a series of inputs. 
 
 
-![Demo](https://gist.githubusercontent.com/sonthonaxrk/01a0428bd318e477686d21a8b3135534/raw/7dcd0601bab46f291821023bbe3c69fdc4477407/asnyc_widget.gif)
-
-
-
-[Example Async Widget](https://gist.githubusercontent.com/sonthonaxrk/cf805531e9c362ae16722f6e9439814a/raw/5bbabeed1e0afec91b35eca47264e96308991136/ipywidget_async.py)
-
 ## Quickstart
 
-    pip install git+git://github.com/sonthonaxrk/async_gui_ipython_kernel.git#egg=async_gui_ipython_kernel
-    python -m async_gui_ipython_kernel install
+``` bash
+git clone ...
+pip install ./async-gui-ipython-kernel
+python -m async_gui_ipython_kernel install --user
+
+```
 
 Make sure to set your kernel to `Async GUI Python 3 (async_gui_ipython_kernel)`.
+
+## Example
+
+The following snippet prints a sequence of numbers, and each iteration requires the user to click the button to continue. "Vanilla" kernel would not respond on the clicks.
+
+
+``` python
+import asyncio
+import ipywidgets as widgets
+
+def wait_for_click(w):
+    e = asyncio.Event()
+    def handler(_):
+        e.set()
+        w.on_click(handler, remove = True)
+    w.on_click(handler)
+    return e.wait()
+
+btn = widgets.Button(description = 'push')
+display(btn)
+
+for i in range(1, 1 + 3):
+    print(i)
+    print('press button to continue...')
+    await wait_for_click(btn)
+
+print('done')
+
+```
 
 
 ## Disclaimer
