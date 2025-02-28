@@ -1,6 +1,7 @@
 import logging
 import zmq
 import sys
+from enum import Enum
 
 from typing import Any, Tuple
 from tornado import gen
@@ -9,9 +10,7 @@ from ipykernel.kernelapp import IPKernelApp
 from ipykernel import kernelspec
 from ipykernel.kernelspec import (
     InstallIPythonKernelSpecApp,
-    make_ipkernel_cmd,
-    # _is_debugpy_available
-)
+    make_ipkernel_cmd)
 
 from traitlets import Unicode
 from tornado.queues import Queue
@@ -22,32 +21,29 @@ class AsyncGUIKernel(IPythonKernel):
     implementation = 'Async GUI'
     banner = (
         'Async GUI - Allow Comm messages to be passed '
-        'when other cells are running.'
-    )
+        'when other cells are running.')
 
-    # Types of messages to push into alternative channels.
-    # Default channel is 0.
-    msg_type_channels = dict(
+    CHANNELS = dict(
+        default = 0,
+        kernel_info_request = 0,
+        history_request = 0,
+        execute_request = 0,
         comm_msg = 1)
 
+    def _get_channels(self):
+        return range(1 + max(self.CHANNELS.values()))
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.log = self.log.getChild('AsyncGUIKernel')
         self.log.setLevel(logging.INFO)
 
-
-    def _get_channels(self):
-        return set([0] + list(self.msg_type_channels.values()))
-
-
     def start(self):
         super().start()
-        self.msg_queues = {k: Queue() for k in self._get_channels()}
+        self.msg_queues = [Queue() for _ in self._get_channels()]
 
         # a dirty hack to make `self.enter_eventloop` work with multiple queues
-        setattr(self.msg_queue, 'qsize', lambda: any(map(Queue.qsize, self.msg_queues)))
-
+        setattr(self.msg_queue, 'qsize', lambda: sum(map(Queue.qsize, self.msg_queues.values())))
 
     def _parse_message(self, msg) -> Tuple[Any, dict]:
         """dispatch control requests"""
@@ -59,7 +55,6 @@ class AsyncGUIKernel(IPythonKernel):
             self.log.error("Invalid Message", exc_info=True)
             return
 
-
     def schedule_dispatch(self, dispatch, *args):
         """
         Changes the schedule_dispatch dispatch method to
@@ -67,20 +62,17 @@ class AsyncGUIKernel(IPythonKernel):
         """
 
         idx = next(self._message_counter)
-        channel = 0
+        msg_type = None
 
         if len(args) >= 1:
             indent, msg = self._parse_message(args[0])
-            msg_type = (msg.get('header', dict()).get('msg_type', ''))
-            channel = self.msg_type_channels.get(msg_type, 0)
+            msg_type = msg.get('header', dict()).get('msg_type')
 
-        self.msg_queues[channel].put_nowait(
-            (
-                idx,
-                dispatch,
-                args,
-            )
-        )
+        channel = self.CHANNELS.get(msg_type)
+        if channel is None:
+            self.log.warning('unknown message type: {}'.format(msg_type))
+            channel = 0
+        self.msg_queues[channel].put_nowait((idx, dispatch, args))
 
         # ensure the eventloop wakes up
         self.io_loop.add_callback(lambda: None)
@@ -91,17 +83,17 @@ class AsyncGUIKernel(IPythonKernel):
         msg = None
         for k in self._get_channels():
             try:
-                msg =  self.msg_queues[i].get_nowait()
+                msg = self.msg_queues[i].get_nowait()
                 break
             except (asyncio.QueueEmpty, QueueEmpty):
                 pass
 
-        t, dispatch, args = msg
-        await dispatch(*args)
+        idx, dispatch, args = msg
+        return await dispatch(*args)
 
 
     async def _fetch_request(self, channel):
-        t, dispatch, args = await self.msg_queues[channel].get()
+        idx, dispatch, args = await self.msg_queues[channel].get()
         return dispatch(*args)
 
 
@@ -114,15 +106,11 @@ class AsyncGUIKernel(IPythonKernel):
     async def process_one(self, wait=True):
         """Process 'one' request
 
-        Returns None if no message was handled.
-
         While the first request is being processed it also processes requests in
         another channels.
         """
-
         if not wait:
             return self._process_one_immediately()
-
 
         # Here we do the following things:
         # - await on all message queues for a new request
@@ -133,7 +121,7 @@ class AsyncGUIKernel(IPythonKernel):
         # If we use single message queue we process exactly one request.
         # If we use more queues, we might process multiple requests in one go.
 
-        channels = self._get_channels()
+        channels = set(self._get_channels())
         requests = self._fill_requests(channels)
         workers = {}
 
@@ -157,21 +145,6 @@ class AsyncGUIKernel(IPythonKernel):
             requests.update(
                 self._fill_requests(
                     channels - set(workers.values()) - set(requests.values())))
-
-
-    def set_parent(self, ident, parent, channel="shell"):
-        """Overridden from parent to tell the display hook and output streams
-        about the parent message.
-        """
-
-        # Don't change the output if the message is from a comm
-        if parent['header']['msg_type'] not in self.msg_type_channels:
-            super().set_parent(ident, parent, channel)
-            if channel == "shell":
-                self.shell.set_parent(parent)
-
-
-default_display_name = "Async GUI Python %i (asyng_gui_ipython_kernel)" % sys.version_info[0]
 
 
 # Monkey patching `get_kernel_dict` to use custom `mod``
