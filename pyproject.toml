@@ -1,6 +1,6 @@
 [project]
 name = "async-gui-ipython-kernel"
-version = "0.0.0"
+version = "0.0.1"
 
 description = "Allows GUI events to be processed while the IPython kernel is processing a cell"
 

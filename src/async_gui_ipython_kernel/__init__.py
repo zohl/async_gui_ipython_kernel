@@ -183,8 +183,13 @@ def custom_get_kernel_dict(
         extra_arguments: list[str] | None = None,
         python_arguments: list[str] | None = None) -> dict[str, Any]:
 
-    return _get_kernel_dict(extra_arguments, python_arguments) | dict(
-        argv = make_ipkernel_cmd('async_gui_ipython_kernel', extra_arguments=extra_arguments))
+    r = _get_kernel_dict(extra_arguments, python_arguments) | dict(
+        argv = make_ipkernel_cmd(
+            'async_gui_ipython_kernel',
+            extra_arguments=extra_arguments,
+            python_arguments=python_arguments))
+
+    return r
 
 
 kernelspec.get_kernel_dict = custom_get_kernel_dict
@@ -192,17 +197,6 @@ kernelspec.get_kernel_dict = custom_get_kernel_dict
 
 class InstallAsyncGUIKernelSpecApp(InstallIPythonKernelSpecApp):
     name = Unicode("async-gui-ipython-kernel-install")
-
-    def initialize(self, argv=None):
-        super().initialize(argv)
-
-        default_argv = {
-            '--name': 'async-gui-' + kernelspec.KERNEL_NAME,
-            '--display-name': default_display_name}
-
-        for k, v in default_argv.items():
-            if k not in self.argv:
-                self.argv += [k, v]
 
 
 class AsyncGUIKernelApp(IPKernelApp):
